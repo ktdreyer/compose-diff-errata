@@ -1,0 +1,4 @@
+colorama
+productmd
+requests
+requests-gssapi

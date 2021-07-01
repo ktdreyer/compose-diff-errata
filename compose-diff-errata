@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import argparse
+from colorama import init, Fore
+import productmd
+import requests
+from requests_gssapi import HTTPSPNEGOAuth, DISABLED
+
+
+init(autoreset=True)
+
+
+def print_diff(data):
+    sorted_nvrs = sorted(list(data['all']))
+    only_in_compose = data['only_in_compose']
+    only_in_errata = data['only_in_errata']
+
+    for nvr in sorted_nvrs:
+        if nvr in only_in_compose:
+            decoration = Fore.RED + '-'
+        elif nvr in only_in_errata:
+            decoration = Fore.RED + '+'
+        else:
+            decoration = ' '
+        print(decoration + nvr)
+
+
+def diff_nvrs(compose_nvrs, errata_nvrs):
+    return {
+        'all': errata_nvrs | compose_nvrs,
+        'only_in_compose': compose_nvrs - errata_nvrs,
+        'only_in_errata': errata_nvrs - compose_nvrs,
+    }
+
+
+def list_compose_nvrs(compose):
+    builds = set()
+    for arches in compose.rpms.rpms.values():
+        for nevras in arches.values():
+            for nevra in nevras:
+                nevra_dict = productmd.common.parse_nvra(nevra)
+                nvr = '%(name)s-%(version)s-%(release)s' % nevra_dict
+                builds.add(nvr)
+    return builds
+
+
+def list_errata_nvrs(advisory_ids):
+    session = requests.session()
+    session.auth = HTTPSPNEGOAuth(opportunistic_auth=True,
+                                  mutual_authentication=DISABLED)
+    builds = set()
+    for advisory_id in advisory_ids:
+        url = f'https://errata.devel.redhat.com/api/v1/erratum/' \
+              f'{advisory_id}/builds'
+        response = session.get(url)
+        response.raise_for_status()
+        data = response.json()
+        for product_version in data.values():
+            builds_data = product_version['builds']
+            for build_data in builds_data:
+                nvrs = list(build_data)
+                assert len(nvrs) == 1
+                nvr = nvrs[0]
+                builds.add(nvr)
+    return builds
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('compose',
+                        help='HTTP(S) URL to a product Pungi compose.')
+    parser.add_argument('advisory_ids', nargs='+',
+                        help='ET advisory ID number, eg 12345.')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    compose = productmd.compose.Compose(args.compose)
+    compose_nvrs = list_compose_nvrs(compose)
+    errata_nvrs = list_errata_nvrs(args.advisory_ids)
+    data = diff_nvrs(compose_nvrs, errata_nvrs)
+    print_diff(data)
+
+
+if __name__ == '__main__':
+    main()
