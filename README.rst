@@ -18,3 +18,8 @@ Ensure you have a Kerberos credential, and then run ``compose-diff-errata``::
 "+" lines are builds in the advisory and not in the compose
 
 "-" lines are builds in the compose and not in the advisory
+
+License
+-------
+
+This tool is GPLv2 to match `compose-utils <https://pagure.io/compose-utils>`_
